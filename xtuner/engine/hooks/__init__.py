@@ -4,8 +4,13 @@ from .evaluate_chat_hook import EvaluateChatHook
 from .hf_checkpoint_hook import HFCheckpointHook
 from .throughput_hook import ThroughputHook
 from .varlen_attn_args_to_messagehub_hook import VarlenAttnArgsToMessageHubHook
+from .iter_time_hook import SamplerLevelIterTimerHook
 
 __all__ = [
-    'EvaluateChatHook', 'DatasetInfoHook', 'ThroughputHook',
-    'VarlenAttnArgsToMessageHubHook', 'HFCheckpointHook'
+    'EvaluateChatHook',
+    'DatasetInfoHook',
+    'ThroughputHook',
+    'VarlenAttnArgsToMessageHubHook',
+    'HFCheckpointHook',
+    'SamplerLevelIterTimerHook',
 ]

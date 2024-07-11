@@ -2,14 +2,20 @@
 import base64
 import copy
 import io
+import random
 from io import BytesIO
 from itertools import chain
+from typing import Iterable, Iterator, List, Optional, Sized, TypeVar
 
 import numpy as np
 import requests
+import torch
 from PIL import Image
+from torch.utils.data import IterableDataset
 
 from xtuner.utils import DEFAULT_IMAGE_TOKEN, IGNORE_INDEX, IMAGE_TOKEN_INDEX
+
+T_co = TypeVar("T_co", covariant=True)
 
 
 def get_bos_eos_token_ids(tokenizer):
@@ -269,3 +275,76 @@ def decode_base64_to_image(base64_string):
     image_data = base64.b64decode(base64_string)
     image = Image.open(io.BytesIO(image_data))
     return image
+
+
+# class ShuffleWrapper(Iterable[T_co]):
+#     """Copied from torchdata"""
+
+#     buffer_size: int
+#     _buffer: List[T_co]
+#     _seed: Optional[int]
+#     _rng: random.Random
+
+#     def __init__(
+#         self,
+#         dataset: Iterable[T_co],
+#         *,
+#         buffer_size: int = 10000,
+#         seed=0,
+#     ) -> None:
+#         super().__init__()
+#         # TODO: Performance optimization
+#         #       buffer can be a fixed size and remove expensive `append()` and `len()` operations
+#         self._buffer: List[T_co] = []
+#         assert buffer_size > 0, "buffer_size should be larger than 0"
+#         self.dataset = dataset
+#         self.buffer_size = buffer_size
+#         self._seed = seed
+#         self._rng = random.Random(seed)
+
+#     def __iter__(self) -> Iterator[T_co]:
+#         for x in self.dataset:
+#             if len(self._buffer) == self.buffer_size:
+#                 idx = self._rng.randint(0, len(self._buffer) - 1)
+#                 val, self._buffer[idx] = self._buffer[idx], x
+#                 yield val
+#             else:
+#                 self._buffer.append(x)
+#         while self._buffer:
+#             idx = self._rng.randint(0, len(self._buffer) - 1)
+#             yield self._buffer.pop(idx)
+
+#     def __len__(self) -> int:
+#         if isinstance(self.dataset, Sized):
+#             return len(self.dataset)
+#         raise TypeError(f"{type(self).__name__} instance doesn't have valid length")
+
+#     def __getstate__(self):
+#         state = (
+#             self.dataset,
+#             self.buffer_size,
+#             self._enabled,
+#             self._seed,
+#             self._buffer,
+#             self._rng.getstate(),
+#             self._valid_iterator_id,
+#             self._number_of_samples_yielded,
+#         )
+#         return state
+
+#     def __setstate__(self, state):
+#         (
+#             self.dataset,
+#             self.buffer_size,
+#             self._enabled,
+#             self._seed,
+#             self._buffer,
+#             rng_state,
+#             self._valid_iterator_id,
+#             self._number_of_samples_yielded,
+#         ) = state
+#         self._rng = torch.random.Random()
+#         self._rng.setstate(rng_state)
+
+#     def __del__(self):
+#         self._buffer.clear()
