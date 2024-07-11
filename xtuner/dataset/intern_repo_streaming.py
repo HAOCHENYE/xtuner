@@ -182,6 +182,7 @@ class InternlmInstruction(TypedDict):
     loss: str
     role: str
     content: str
+    name: str
 
 
 class InternlmStreamingData(TypedDict):
@@ -212,7 +213,12 @@ class JsonlDataset:
                             InternlmStreamingData(
                                 source=str(f),
                                 data=[
-                                    InternlmInstruction(loss=i.get('loss', True), role=i['role'], content=i['content'])
+                                    InternlmInstruction(
+                                        loss=i.get('loss', True),
+                                        role=i['role'],
+                                        content=i['content'],
+                                        name=i.get('name'),
+                                    )
                                     for i in item
                                 ],
                             )
