@@ -1,14 +1,16 @@
-import json
 import random
 from copy import copy
 from pathlib import Path
-from typing import Dict, Iterable, List, TypedDict
+from typing import Dict, List, TypedDict
+from sentencepiece import SentencePieceProcessor
+
 
 import jsonlines
 from mmengine import ConfigDict
-from mmengine.dist import get_rank, get_world_size
+from mmengine.dist import all_gather_object, get_rank, get_world_size
 from mmengine.logging import print_log
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import DataLoader, IterableDataset, get_worker_info
+from tqdm import tqdm
 from transformers import AutoTokenizer
 from typing_extensions import NotRequired
 
@@ -232,6 +234,7 @@ class JsonlDataset:
 
 
 class TokenizerWrapper(IterableDataset):
+
     def __init__(
         self,
         dataset: List[InternlmStreamingData],
@@ -239,6 +242,8 @@ class TokenizerWrapper(IterableDataset):
         role_cfg: dict,
         max_length: int,
         shuffle=True,
+        estimate_num=1000,
+        pad: bool = False,
         seed=0,
     ):
         if not isinstance(role_cfg, dict):
@@ -252,20 +257,39 @@ class TokenizerWrapper(IterableDataset):
 
         self.shuffle = shuffle
         self.seed = seed
+        self.pad = pad
         self.random_generator = random.Random(seed)
         # self._tokenizer = tokenizer
         self.tokenizer = BUILDER.build(tokenizer)
+
+        if self.shuffle:
+            self.random_generator.shuffle(self.dataset)
+        self.estimate_num = estimate_num
+        self.length = self._estimate_length()
 
     # @property
     # def tokenizer(self):
     #     if isinstance(self._tokenizer, dict):
     #     return self._tokenizer
 
-    def __len__(self):
-        return 350
+    def _estimate_length(self):
+        samples = self.random_generator.sample(self.dataset, k=self.estimate_num)
+        processed_samples = [i['data'] for i in samples]
+        # with ProcessPoolExecutor(max_workers=4) as executor:
+        #     results = []
+        #     for result in tqdm(executor.map(self.tokenize, processed_samples), total=len(processed_samples)):
+        #         results.append(result)
+        results = []
+        for sample in tqdm(processed_samples):
+            result = self.tokenize(sample)
+            results.append(result)
 
-    # def __len__(self):
-    #     return len(self.dataset)
+        num_tokens = sum(len(i[0]) for i in results)
+        max_num_tokens = max(all_gather_object(num_tokens))
+        return int(len(self.dataset) / self.estimate_num * max_num_tokens / self.max_length) + 1
+
+    def __len__(self):
+        return self.length
 
     def __iter__(self):
         worker_info = get_worker_info()
@@ -284,40 +308,64 @@ class TokenizerWrapper(IterableDataset):
             position_ids.extend(range(pad_num))
             cumulative_len.append(cumulative_len[-1] + pad_num)
 
+        def cut_to_max_len(
+            pad_num: int,
+            new_tokens: List[int],
+            new_lables: List[int],
+            token_ids: List[int],
+            labels: List[int],
+            position_ids: List[int],
+            cumulative_len: List[int],
+        ):
+            token_ids += new_tokens[:pad_num]
+            labels += new_lables[:pad_num]
+            position_ids.extend(range(pad_num))
+            cumulative_len.append(cumulative_len[-1] + pad_num)
+
         token_ids = []
         cumulative_len = [0]
         position_ids = []
         labels = []
 
+        idx = process_id
+        for _ in range(len(self)):
+            while True:
+                new_tokens, new_labels = self.tokenize(self.dataset[idx]['data'])
+                if len(token_ids) + len(new_tokens) > self.max_length:
+                    pad_num = self.max_length - len(token_ids)
+                    if pad_num > 0:
+                        if self.pad:
+                            pad_to_max_len(pad_num, token_ids, labels, position_ids, cumulative_len)
+                        else:
+                            cut_to_max_len(
+                                pad_num, new_tokens, new_labels, token_ids, labels, position_ids, cumulative_len
+                            )
+                            new_tokens = new_tokens[pad_num:]
+                            new_labels = new_labels[pad_num:]
+                    yield InternlmTokenizedData(
+                        input_ids=token_ids, cumulative_len=cumulative_len, position_ids=position_ids, labels=labels
+                    )
+                    token_ids = new_tokens
+                    labels = new_labels
+                    position_ids = list(range(len(new_tokens)))
+                    cumulative_len = [0, len(new_tokens)]
+                    break
+                else:
+                    token_ids += new_tokens
+                    labels += new_labels
+                    cumulative_len.append(cumulative_len[-1] + len(new_tokens))
+                    position_ids.extend(range(len(new_tokens)))
+                idx = (idx + num_workers) % len(self.dataset)
+
+        # if token_ids:
+        #     pad_num = self.max_length - len(token_ids)
+        #     pad_to_max_len(pad_num, token_ids, labels, position_ids, cumulative_len)
+        #     yield InternlmTokenizedData(
+        #         input_ids=token_ids, cumulative_len=cumulative_len, position_ids=position_ids, labels=labels
+        #     )
+
         if self.shuffle:
             self.random_generator.shuffle(self.dataset)
-
-        for idx in range(process_id, len(self.dataset), num_workers):
-
-            new_tokens, new_labels = self.tokenize(self.dataset[idx]['data'])
-            if len(token_ids) + len(new_tokens) > self.max_length:
-                pad_num = self.max_length - len(token_ids)
-                if pad_num > 0:
-                    pad_to_max_len(pad_num, token_ids, labels, position_ids, cumulative_len)
-                yield InternlmTokenizedData(
-                    input_ids=token_ids, cumulative_len=cumulative_len, position_ids=position_ids, labels=labels
-                )
-                token_ids = new_tokens
-                labels = new_labels
-                position_ids = list(range(len(new_tokens)))
-                cumulative_len = [0, len(new_tokens)]
-            else:
-                token_ids += new_tokens
-                labels += new_labels
-                cumulative_len.append(cumulative_len[-1] + len(new_tokens))
-                position_ids.extend(range(len(new_tokens)))
-
-        if token_ids:
-            pad_num = self.max_length - len(token_ids)
-            pad_to_max_len(pad_num, token_ids, labels, position_ids, cumulative_len)
-            yield InternlmTokenizedData(
-                input_ids=token_ids, cumulative_len=cumulative_len, position_ids=position_ids, labels=labels
-            )
 
     def tokenize(self, processed_data):
         # For FTDP style data, `processed_data` will be a list of dict.
@@ -406,8 +454,13 @@ class TokenizerWrapper(IterableDataset):
             token_ids += tokens
             labels += label
 
-        token_ids = [self.tokenizer.bos_token_id] + token_ids
-        labels = [self.tokenizer.bos_token_id] + labels
+        bos_token = (
+            self.tokenizer.bos_id()
+            if isinstance(self.tokenizer, SentencePieceProcessor)
+            else self.tokenizer.bos_token_id
+        )
+        token_ids = [bos_token] + token_ids
+        labels = [bos_token] + labels
         token_ids = token_ids[: self.max_length]
         labels = labels[: self.max_length]
         return token_ids, labels
@@ -419,6 +472,8 @@ def build_internlm_streaming_dataset(
     role_cfg: dict,
     max_length: int = 32768,
     shuffle: bool = True,
+    estimate_num=1000,
+    pad: bool = False,
     seed: int = 0,
 ):
     rank = get_rank()
@@ -437,5 +492,7 @@ def build_internlm_streaming_dataset(
         max_length=max_length,
         shuffle=shuffle,
         seed=seed,
+        estimate_num=estimate_num,
+        pad=pad,
     )
     return tokenized_dataset

@@ -70,4 +70,10 @@ class HFCheckpointHook(Hook):
 
             print_log(f'Saving LLM tokenizer to {self.out_dir}')
             tokenizer = BUILDER.build(runner.cfg.tokenizer)
-            tokenizer.save_pretrained(self.out_dir)
+            if hasattr(tokenizer, 'save_pretrained'):
+                tokenizer.save_pretrained(self.out_dir)
+            else:
+                from transformers import AutoTokenizer
+
+                tokenizer = AutoTokenizer.from_pretrained(runner.cfg.pretrained_model_name_or_path)
+                tokenizer.save_pretrained(self.out_dir)
