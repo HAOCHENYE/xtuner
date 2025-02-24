@@ -21,9 +21,8 @@ from .huggingface import process
 
 
 class JsonlDataset(torch.utils.data.Dataset):
-    """
+    """JSONL format is expected to roughly follow that of The Pile.
 
-    JSONL format is expected to roughly follow that of The Pile.
     One-line-per-document of the form:
     ```
     {
@@ -31,7 +30,6 @@ class JsonlDataset(torch.utils.data.Dataset):
         "labels": List[int]
     }
     ```
-
     """
 
     def __init__(self, path: str, min_length=50):

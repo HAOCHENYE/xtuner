@@ -171,15 +171,8 @@ class ChatMessages(BaseMessages):
 
     @classmethod
     def from_dict(cls, item: dict) -> "ChatMessages":
-        """
-        item
-        {
-            'messages':[
-                {'role':'user', 'content':'hello'},
-                {'role':'assistant', 'content':'hello!'},
-            ],
-        }
-        """
+        """Item { 'messages':[ {'role':'user', 'content':'hello'},
+        {'role':'assistant', 'content':'hello!'}, ], }"""
         return cls(**item)
 
 

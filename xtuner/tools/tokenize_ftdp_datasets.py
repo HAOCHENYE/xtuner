@@ -112,12 +112,8 @@ def chatml_format(
     max_len=2048,
     encode_json=True,
 ):
-    """
-    ```python
-        dict(
-            role='',
-            content='',
-            name='', -> Begin 扩增
+    """```python dict( role='', content='', name='', -> Begin 扩增.
+
             type='',
             )
     ```

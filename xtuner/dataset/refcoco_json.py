@@ -95,7 +95,7 @@ class RefCOCOJsonDataset(LLaVADataset):
 
     @classmethod
     def gen_refcoco_conversations(cls, data, instruction_template="{}"):
-        """build conversition data from refcoco json data as below.
+        """Build conversition data from refcoco json data as below.
 
         "id": "xxx",
         "image": "xxx.jpg",
@@ -197,7 +197,7 @@ class InvRefCOCOJsonDataset(RefCOCOJsonDataset):
 
     @classmethod
     def gen_refcoco_conversations(cls, data, instruction_template="{}"):
-        """build conversition data from refcoco json data as below.
+        """Build conversition data from refcoco json data as below.
 
         "id": "xxx",
         "image": "xxx.jpg",
