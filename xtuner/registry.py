@@ -5,3 +5,4 @@ __all__ = ["BUILDER", "MAP_FUNC"]
 
 BUILDER = Registry("builder")
 MAP_FUNC = Registry("map_fn")
+MAP_FUNC = Registry("foo")
